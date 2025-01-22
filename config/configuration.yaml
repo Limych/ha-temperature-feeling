@@ -29,4 +29,21 @@ sensor:
       test_humidity:
 #        unit_of_measurement: "%"
         value_template: "{{ 43 }}"
-#        device_class: humidity
+        device_class: humidity
+
+input_boolean:
+  dummy_heater:
+    name: "Dummy Heater"
+
+climate:
+  - platform: generic_thermostat
+    name: "Template Climate"
+    heater: switch.dummy_heater  # Create or use a dummy switch
+    target_sensor: sensor.test_temperature
+    min_temp: 15
+    max_temp: 30
+    ac_mode: false
+    target_temp: 22.5
+    cold_tolerance: 0.5
+    hot_tolerance: 0.5
+    initial_hvac_mode: "heat"
