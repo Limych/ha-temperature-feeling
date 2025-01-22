@@ -249,11 +249,11 @@ class ApparentTemperatureSensor(SensorEntity):
         """Register callbacks and ensure entities are initialized."""
 
         @callback
-        def sensor_state_listener(_: Event[EventStateChangedData]) -> None:
+        def sensor_state_listener(event: Event[EventStateChangedData]) -> None:  # noqa: ARG001
             """Handle state changes of tracked entities."""
             self.async_schedule_update_ha_state(force_refresh=True)
 
-        async def setup_listeners(_: Event | None = None) -> None:
+        async def setup_listeners(event: Event | None = None) -> None:  # noqa: ARG001
             """Set up listeners for state changes."""
             self._setup_sources()  # Dynamically resolve sources
             tracked_entities = self._setup_sources()
