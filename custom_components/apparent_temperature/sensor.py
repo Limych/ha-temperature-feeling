@@ -170,8 +170,11 @@ class ApparentTemperatureSensor(SensorEntity):
         )
 
     @property
-    def unique_id(self) -> str:
+    def unique_id(self) -> str | None:
         """Return a unique ID for this sensor."""
+        if self._attr_unique_id is None:
+            return None
+
         return f"{DOMAIN}_{self._attr_unique_id}"
 
     @property
