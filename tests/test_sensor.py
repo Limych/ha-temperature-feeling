@@ -217,7 +217,7 @@ async def test_entity_initialization(hass: HomeAssistant):
 
     entity.hass = hass
 
-    assert entity.unique_id == TEST_UNIQUE_ID
+    assert entity.unique_id == "apparent_temperature_test_id"
     assert entity.name == TEST_NAME
     assert entity.device_class == NumberDeviceClass.TEMPERATURE
     assert entity.state_class == SensorStateClass.MEASUREMENT

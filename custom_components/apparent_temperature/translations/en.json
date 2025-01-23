@@ -1,0 +1,44 @@
+{
+    "config": {
+        "step": {
+            "user": {
+                "title": "Apparent Temperature Setup",
+                "description": "Choose configuration type",
+                "data": {
+                    "type": "Configuration type",
+                    "manual_entities_label": "Manual entities",
+                    "weather_entity_label": "Weather entity"
+                }
+            },
+            "manual_config": {
+                "title": "Manual Setup",
+                "description": "Provide the necessary sensor entities.",
+                "data": {
+                    "name": "Name",
+                    "temperature": "Temperature Sensor",
+                    "humidity": "Humidity Sensor",
+                    "wind_speed": "Wind Speed Sensor"
+                }
+            },
+            "weather_config": {
+                "title": "Weather Entity Setup",
+                "description": "Provide the necessary sensor entities.",
+                "data": {
+                    "name": "Name",
+                    "weather": "Weather entity"
+                }
+            },
+            "climate_config": {
+                "title": "Climate Entity Setup",
+                "description": "Provide the necessary sensor entities.",
+                "data": {
+                    "name": "Name",
+                    "climate": "Climate entity"
+                }
+            }
+        },
+        "error": {
+            "required_field": "This field is required."
+        }
+    }
+}

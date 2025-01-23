@@ -9,7 +9,7 @@
     "codeowners": [
         "@Limych"
     ],
-    "config_flow": false,
+    "config_flow": true,
     "dependencies": [],
     "documentation": "https://github.com/Limych/ha-apparent-temperature",
     "iot_class": "calculated",

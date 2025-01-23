@@ -6,11 +6,11 @@ from collections.abc import Mapping
 from typing import Any
 
 import voluptuous as vol
-from homeassistant.components.climate import (
+from homeassistant.components.climate.const import (
     ATTR_CURRENT_HUMIDITY,
     ATTR_CURRENT_TEMPERATURE,
 )
-from homeassistant.components.climate import (
+from homeassistant.components.climate.const import (
     DOMAIN as CLIMATE_DOMAIN,
 )
 from homeassistant.components.group import expand_entity_ids
@@ -19,16 +19,17 @@ from homeassistant.components.sensor import (
     SensorEntity,
     SensorStateClass,
 )
-from homeassistant.components.weather import (
+from homeassistant.components.weather.const import (
     ATTR_WEATHER_HUMIDITY,
     ATTR_WEATHER_TEMPERATURE,
     ATTR_WEATHER_TEMPERATURE_UNIT,
     ATTR_WEATHER_WIND_SPEED,
     ATTR_WEATHER_WIND_SPEED_UNIT,
 )
-from homeassistant.components.weather import (
+from homeassistant.components.weather.const import (
     DOMAIN as WEATHER_DOMAIN,
 )
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     ATTR_DEVICE_CLASS,
     ATTR_UNIT_OF_MEASUREMENT,
@@ -44,6 +45,7 @@ from homeassistant.const import (
 )
 from homeassistant.core import (
     Event,
+    EventStateChangedData,
     HomeAssistant,
     State,
     callback,
@@ -52,7 +54,11 @@ from homeassistant.core import (
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_state_change_event
-from homeassistant.helpers.typing import ConfigType, DiscoveryInfoType, UndefinedType
+from homeassistant.helpers.typing import (
+    ConfigType,
+    DiscoveryInfoType,
+    UndefinedType,
+)
 from homeassistant.util.unit_conversion import SpeedConverter, TemperatureConverter
 
 from .const import (
@@ -62,6 +68,7 @@ from .const import (
     ATTR_TEMPERATURE_SOURCE_VALUE,
     ATTR_WIND_SPEED_SOURCE,
     ATTR_WIND_SPEED_SOURCE_VALUE,
+    DOMAIN,
     STARTUP_MESSAGE,
 )
 
@@ -74,6 +81,32 @@ PLATFORM_SCHEMA = cv.PLATFORM_SCHEMA.extend(
         vol.Optional(CONF_UNIQUE_ID): cv.string,
     }
 )
+
+
+# pylint: disable=unused-argument
+async def async_setup_entry(
+    hass: HomeAssistant,
+    config_entry: ConfigEntry,
+    async_add_entities: AddEntitiesCallback,
+) -> None:
+    """Set up entity based on given config."""
+    keys_to_check = ["temperature", "humidity", "wind_speed", "weather", "climate"]
+
+    sources = [
+        config_entry.data[key] for key in keys_to_check if key in config_entry.data
+    ]
+
+    async_add_entities(
+        [
+            ApparentTemperatureSensor(
+                unique_id=f"{config_entry.data['name']}_apparent_temperature".replace(
+                    " ", "_"
+                ),
+                name=config_entry.data["name"],
+                sources=expand_entity_ids(hass, sources),
+            )
+        ]
+    )
 
 
 # pylint: disable=unused-argument
@@ -92,7 +125,7 @@ async def async_setup_platform(
             ApparentTemperatureSensor(
                 config.get(CONF_UNIQUE_ID),
                 config.get(CONF_NAME),
-                expand_entity_ids(hass, config.get(CONF_SOURCE)),
+                expand_entity_ids(hass, config.get(CONF_SOURCE) or []),
             )
         ]
     )
@@ -137,6 +170,14 @@ class ApparentTemperatureSensor(SensorEntity):
         )
 
     @property
+    def unique_id(self) -> str | None:
+        """Return a unique ID for this sensor."""
+        if self._attr_unique_id is None:
+            return None
+
+        return f"{DOMAIN}_{self._attr_unique_id}"
+
+    @property
     def name(self) -> str | UndefinedType | None:
         """Return the name of the sensor."""
         if self._name:
@@ -160,7 +201,13 @@ class ApparentTemperatureSensor(SensorEntity):
         """Set sources for entity and return list of sources to track."""
         entities = set()
         for entity_id in self._sources:
-            state: State = self.hass.states.get(entity_id)
+            state: State | None = self.hass.states.get(entity_id)
+            if state is None:
+                _LOGGER.warning(
+                    "Entity ID '%s' does not exist or is unavailable.", entity_id
+                )
+                continue
+
             domain = split_entity_id(state.entity_id)[0]
             device_class = state.attributes.get(ATTR_DEVICE_CLASS)
             unit_of_measurement = state.attributes.get(ATTR_UNIT_OF_MEASUREMENT)
@@ -199,30 +246,35 @@ class ApparentTemperatureSensor(SensorEntity):
                 self._wind = entity_id
                 entities.add(entity_id)
 
-        return list(entities)
+        return list(self._sources)
 
     async def async_added_to_hass(self) -> None:
-        """Register callbacks."""
+        """Register callbacks and ensure entities are initialized."""
 
-        # pylint: disable=unused-argument
         @callback
-        def sensor_state_listener(event: Event) -> None:  # noqa: ARG001
-            """Handle device state changes."""
+        def sensor_state_listener(event: Event[EventStateChangedData]) -> None:  # noqa: ARG001
+            """Handle state changes of tracked entities."""
             self.async_schedule_update_ha_state(force_refresh=True)
 
-        # pylint: disable=unused-argument
-        @callback
-        def sensor_startup(event: Event) -> None:  # noqa: ARG001
-            """Update entity on startup."""
+        async def setup_listeners(event: Event | None = None) -> None:  # noqa: ARG001
+            """Set up listeners for state changes."""
+            self._setup_sources()  # Dynamically resolve sources
+            tracked_entities = self._setup_sources()
+            if not tracked_entities:
+                _LOGGER.warning(
+                    "No valid entities found for apparent temperature sensor"
+                )
+                return
             async_track_state_change_event(
-                self.hass, self._setup_sources(), sensor_state_listener
+                self.hass, tracked_entities, sensor_state_listener
             )
+            self.async_schedule_update_ha_state(force_refresh=True)
 
-            self.async_schedule_update_ha_state(
-                force_refresh=True
-            )  # Force first update
-
-        self.hass.bus.async_listen_once(EVENT_HOMEASSISTANT_START, sensor_startup)
+        # Listen for Home Assistant startup and ensure listeners are set
+        if self.hass.is_running:
+            await setup_listeners()
+        else:
+            self.hass.bus.async_listen_once(EVENT_HOMEASSISTANT_START, setup_listeners)
 
     @staticmethod
     def _has_state(state: str | None) -> bool:
@@ -238,7 +290,7 @@ class ApparentTemperatureSensor(SensorEntity):
         """Get temperature value (in °C) from entity."""
         if entity_id is None:
             return None
-        state: State = self.hass.states.get(entity_id)
+        state: State | None = self.hass.states.get(entity_id)
         if state is None:
             return None
 
@@ -253,7 +305,7 @@ class ApparentTemperatureSensor(SensorEntity):
             temperature = state.state
             entity_unit = state.attributes.get(ATTR_UNIT_OF_MEASUREMENT)
 
-        if not self._has_state(temperature):
+        if not self._has_state(temperature) or temperature is None:
             return None
 
         try:
@@ -270,7 +322,7 @@ class ApparentTemperatureSensor(SensorEntity):
         """Get humidity value from entity."""
         if entity_id is None:
             return None
-        state: State = self.hass.states.get(entity_id)
+        state: State | None = self.hass.states.get(entity_id)
         if state is None:
             return None
 
@@ -282,7 +334,7 @@ class ApparentTemperatureSensor(SensorEntity):
         else:
             humidity = state.state
 
-        if not self._has_state(humidity):
+        if not self._has_state(humidity) or humidity is None:
             return None
 
         return float(humidity)
@@ -291,7 +343,7 @@ class ApparentTemperatureSensor(SensorEntity):
         """Get wind speed value from entity."""
         if entity_id is None:
             return 0.0
-        state: State = self.hass.states.get(entity_id)
+        state: State | None = self.hass.states.get(entity_id)
         if state is None:
             return 0.0
 
@@ -303,7 +355,7 @@ class ApparentTemperatureSensor(SensorEntity):
             wind_speed = state.state
             entity_unit = state.attributes.get(ATTR_UNIT_OF_MEASUREMENT)
 
-        if not self._has_state(wind_speed):
+        if not self._has_state(wind_speed) or wind_speed is None:
             return None
 
         try:
